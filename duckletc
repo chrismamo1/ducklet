@@ -1,0 +1,105 @@
+#!/usr/bin/perl -w
+
+if ($#ARGV + 1 != 1) {
+        print "\nUsage error! Filename expected.\n";
+        exit;
+}
+
+$fh = IO::File->new();
+
+$fname = $ARGV[0];
+my $delim;
+my $hdelim;
+my $print_start;
+my $print_stop;
+my $preamble;
+my $addendum;
+my $main = "";;
+
+if ((substr $fname, -8) eq ".ml.html") {
+        #print "OCaml\n";
+        $print_start = "output_string stdout ";
+        $print_stop  = ";;\n";
+        $preamble = "";
+        $addendum = "";
+        $delim = "ml";
+        $hdelim = "";
+}
+
+if ((substr $fname, -8) eq ".py.html") {
+        #print "Python\n";
+        $print_start = "print(";
+        $print_stop  = ");\n";
+        $preamble = "";
+        $addendum = "";
+        $delim = "py";
+        $hdelim = "";
+}
+
+if ((substr $fname, -7) eq ".c.html") {
+        #print "C\n";
+        $print_start = "puts(";
+        $print_stop  = ");";
+        
+        $hdelim = "h";
+        $delim = "c";
+
+        $preamble = "#include <stdio.h>\n";
+        $preamble = $preamble . "#include <string.h>\n";
+        $preamble = $preamble .  "#include <stdlib.h>\n";
+        $preamble = $preamble . "#include <math.h>\n";
+
+        $main = "int main(int argc, char *argv[])\n{\n";
+        $addendum = "return 0;\n};";
+}
+
+if ($fh->open("< $fname")) {
+        my $lines = "";
+        while (my $line = <$fh>) {
+                $lines = $lines . $line;
+        }
+        my $headers = "";
+        if ($hdelim eq "") {}
+        else {
+                my $headers = $lines;
+                $headers =~ s/.*<\?$hdelim\s(.*)\?>.*/$1/gm;
+                print $headers;
+                exit;
+        }
+        my @chunks = split(/(<\?$delim|\?>)/m, $lines);
+        my $ctag = 0;
+        my $plain = 1;
+        my $opentag = 2;
+        my $code = 3;
+        my $htag = 4;
+        my $hclose = 5;
+        my $hcode = 6;
+        my $last = $ctag;
+        print $preamble;
+        print $headers;
+        print "$main";
+        foreach my $chunk (@chunks) {
+                if ($last == $ctag) {
+                        $last = $plain;
+                        $chunk =~ s/(\n|\r\n|\n\r)/ /mg;
+                        $chunk =~ s/\s{2,}/ /mg;
+                        $chunk =~ s/([^\s]*)\s*$/$1 /mg;
+                        $chunk =~ s/^\s*([^\s]*.*)/ $1/mg;
+                        $chunk =~ s/([^\\])"/$1\\"/mg;
+                        $chunk = $print_start . "\"" . $chunk . "\"" . $print_stop;
+                        print $chunk;
+                } elsif ($last == $plain) {
+                        $last = $opentag;
+                } elsif ($last == $opentag) {
+                        $last = $code;
+                        print "$chunk" . "\n";
+                } elsif ($last == $code) {
+                        $last = $ctag;
+                }
+                #print "\n\n\"$chunk\"\n\n\n";
+        }
+        
+        print $addendum;
+
+        $fh->close;
+}

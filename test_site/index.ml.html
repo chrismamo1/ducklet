@@ -1,0 +1,77 @@
+<html>
+<head>
+<title>
+        <?ml
+        open Core.Std;;
+
+        let unoption_string s =
+          match s with
+          | Some str -> str
+          | None -> "";;
+
+        let (--) i j = 
+          let rec aux n acc =
+            if n < i then acc else aux (n-1) (n :: acc)
+          in aux j [];;
+
+
+        let matrix_multiply x y =
+          let x0 = Array.length x
+                   and y0 = Array.length y in
+          let y1 = if y0 = 0 then 0 else Array.length y.(0) in
+          let z = Array.make_matrix x0 y1 0 in
+          for i = 0 to x0-1 do
+            for j = 0 to y1-1 do
+              for k = 0 to y0-1 do
+                z.(i).(j) <- z.(i).(j) + x.(i).(k) * y.(k).(j)
+              done
+            done
+          done;
+          z;;
+
+        let matrix_print x =
+          let len = Array.length x in
+          for i = 0 to len - 1 do
+            let wid = Array.length x.(i) in
+            for j = 0 to wid - 1 do
+              printf "%d, " x.(i).(j)
+            done;
+            printf "<br />";
+          done;
+          ();;
+
+        let m1 = Array.make_matrix 50 50 2
+        let m2 = Array.make_matrix 50 50 2
+
+        let m3 = matrix_multiply m1 m2
+
+        let testval = 41989;;
+        let is_prime n =
+          let rec testdiv m test =
+            if test > 1 then
+              begin
+                if m mod test = 0 then true
+                else testdiv m (test - 2)
+              end
+            else false in
+        if testdiv n (n - 1) = true then false else true;;
+        printf "Is %d prime?" testval;;
+        ?>
+</title>
+</head>
+<body>
+<h1>
+        <?ml
+        open Sys;;
+        let post_requests = unoption_string (Sys.getenv "ducklet_post") in
+        output_string stdout post_requests;;
+        ?>
+</h1>
+<h3>Is "<?ml printf "%d" testval;; ?>" prime?</h3><br />
+<h1><?ml printf (if is_prime testval then "Yes" else "No");; ?></h1>
+<h1>
+        <?ml matrix_print m1;; ?><br />TIMES<br /><?ml matrix_print m2;; ?><br />
+        EQUALS<br /><?ml matrix_print m3; ?>
+</h1>
+</body>
+</html>
