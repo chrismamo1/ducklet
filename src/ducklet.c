@@ -58,7 +58,26 @@ int main(int argc, char *argv[])
         time_t ticks;
         int nconns = 0;
         handler_thread_t conns[64];
-        int i, j, k;
+        int i, j, k, c, port = -1;
+
+        while ((c = getopt(argc, argv, "p:")) != -1) {
+                switch (c) {
+                case 'p':
+                        port = atoi(optarg);
+                        break;
+                case '?':
+                        fprintf(stderr, "unrecognized option '%c'\n", optopt);
+                        exit(1);
+                default:
+                        abort();
+                }
+        }
+
+        if (port == -1) {
+                fprintf(stderr, "please provide a port number\n");
+                exit(1);
+        }
+
         site = get_site(argv[argc - 1]);
 
         listenfd = socket(AF_INET, SOCK_STREAM | O_NONBLOCK, 0);
@@ -67,7 +86,7 @@ int main(int argc, char *argv[])
 
         serv_addr.sin_family = AF_INET;
         serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        serv_addr.sin_port = htons(5000);
+        serv_addr.sin_port = htons(port);
 
         bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)); 
         
