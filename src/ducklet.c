@@ -41,7 +41,7 @@ int listenfd;
 
 void cleanup_main();
 
-ducklet_site_t **sites;
+ducklet_site_t *site;
 
 int main(int argc, char *argv[])
 {
@@ -54,17 +54,12 @@ int main(int argc, char *argv[])
         listenfd = 0;
         struct sockaddr_in serv_addr; 
         const size_t len = 1024;
-        size_t num_sites = argc - 1;
-        sites = malloc(num_sites * sizeof(ducklet_site_t*));
         char buffer[len];
         time_t ticks;
         int nconns = 0;
         handler_thread_t conns[64];
         int i, j, k;
-
-        for (i = 0; i < argc - 1; i++) {
-                sites[i] = get_site(argv[i + 1]);
-        }
+        site = get_site(argv[argc - 1]);
 
         listenfd = socket(AF_INET, SOCK_STREAM | O_NONBLOCK, 0);
         memset(&serv_addr, '0', sizeof(serv_addr));
@@ -86,11 +81,11 @@ int main(int argc, char *argv[])
                 ticks--;
                 int connfd = accept4(listenfd, (struct sockaddr*)NULL, NULL, SOCK_NONBLOCK);
                 if (connfd != -1) {
-                        printf(KWHT "Incoming connection, creating thread...");
+                        printf(KWHT "Handling incoming connection...");
                         connection_t *conn = malloc(sizeof(connection_t));
                         conn->connfd = connfd;
                         conn->listenfd = listenfd;
-                        conn->site = sites[0];
+                        conn->site = site;
 
                         char *child_stack = malloc(STACK_SIZE);
                         char *stack_top = child_stack + STACK_SIZE;
@@ -168,16 +163,14 @@ void cleanup_main()
 {
         close(listenfd);
         int i, j;
-        for (j = 0; j < 1; j++) {
-                for (i = 0; i < sites[j]->num_resources; i++) {
-                        free(sites[j]->resources[i].resource_name);
-                        free(sites[j]->resources[i].template_file);
-                        free(sites[j]->resources[i].resource_file);
-                        free(sites[j]->resources[i].intermediate_file);
-                        free(sites[j]->resources[i].compilation_command);
-                }
-                free(sites[j]->resources);
+        for (i = 0; i < site->num_resources; i++) {
+                free(site->resources[i].resource_name);
+                free(site->resources[i].template_file);
+                free(site->resources[i].resource_file);
+                free(site->resources[i].intermediate_file);
+                free(site->resources[i].compilation_command);
         }
+        free(site->resources);
 }
 
 void handlesignals(int sig)
