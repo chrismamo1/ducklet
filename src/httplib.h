@@ -36,6 +36,8 @@ char *get_parameter(char *head, char *param);
 
 http_request_t get_http_request(char *req);
 
+void free_http_request(http_request_t *req);
+
 char *build_http_response(http_request_t *req, http_status_e status);
 
 void print_http_request(http_request_t req);

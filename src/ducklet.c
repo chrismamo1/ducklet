@@ -21,11 +21,6 @@
 
 #define STACK_SIZE 10000
 
-typedef struct _handler_thread_t {
-        pid_t pid;
-        char *stack;
-} handler_thread_t;
-
 typedef struct _get_request_t {
         char *key;
         char *val;
@@ -35,7 +30,7 @@ typedef void sigfunc(int);
 
 void handlesignals(int sig);
 
-int handle_request(void *arg);
+int handle_request(int connfd, int listenfd);
 
 int listenfd;
 
@@ -56,9 +51,7 @@ int main(int argc, char *argv[])
         const size_t len = 1024;
         char buffer[len];
         time_t ticks;
-        int nconns = 0;
-        handler_thread_t conns[64];
-        int i, j, k, c, port = -1;
+        int c, port = -1;
 
         while ((c = getopt(argc, argv, "p:")) != -1) {
                 switch (c) {
@@ -94,85 +87,15 @@ int main(int argc, char *argv[])
 
         while(1)
         {
-                pid_t pid;
-                int status;
                 ticks = time(NULL);
                 ticks--;
                 int connfd = accept4(listenfd, (struct sockaddr*)NULL, NULL, SOCK_NONBLOCK);
                 if (connfd != -1) {
                         printf(KWHT "Handling incoming connection...");
-                        connection_t *conn = malloc(sizeof(connection_t));
-                        conn->connfd = connfd;
-                        conn->listenfd = listenfd;
-                        conn->site = site;
 
-                        char *child_stack = malloc(STACK_SIZE);
-                        char *stack_top = child_stack + STACK_SIZE;
-                        pid = clone(handle_request, stack_top, 0
-                                    , (void*)conn);
-                        if (pid != -1) {
-                                handler_thread_t thr;
-                                thr.pid = pid;
-                                thr.stack = child_stack;
-                                conns[nconns] = thr;
-                                nconns++;
-                        } else
-                                printf(KYEL "WARNING " KRST "Failure creating handler\n");
+                        handle_request(connfd, listenfd);
                 } else
                         usleep(50);
-
-                for (i = 0; i < nconns; i++) {
-                        if ((pid = waitpid(-1, &status, WNOHANG | __WALL | __WCLONE)) > 0) {
-                                printf(KYEL);
-                                if (WIFEXITED(status)) {
-                                        //printf("WIFEXITED\n");
-                                        //printf("\tEXIT STATUS %d\n", WEXITSTATUS(status));
-                                } if (WIFSIGNALED(status)) {
-                                        if (WCOREDUMP(status)) {
-                                                printf("WIFSIGNALED\n");
-                                                printf("\tTERMINATION SIGNAL %d\n", WTERMSIG(status));
-                                                printf("\tWCOREDUMP\n");
-                                        }
-                                }
-                                if (WIFSTOPPED(status)) {
-                                        //printf("WIFSTOPPED\n");
-                                        //printf("\tSTOP SIGNAL %d\n", WSTOPSIG(status));
-                                } if (WIFCONTINUED(status)) {
-                                        //printf("WIFCONTINUED\n");
-                                        printf(KRST);
-                                        continue;
-                                }
-                                printf(KRST);
-                                for (j = 0; conns[j].pid != pid; j++)
-                                        if (j >= nconns) {
-                                                printf(KRED "This should never happen.\n" KRST);
-                                                exit(1);
-                                        }
-                                free(conns[j].stack);
-                                for (k = j; k < nconns - 1; k++)
-                                        conns[k] = conns[k + 1];
-                                nconns--;
-                        } else if (pid < 0) { // error
-                                printf(KRED);
-                                switch (errno) {
-                                case ECHILD:
-                                        printf("ECHILD\n");
-                                        break;
-                                case EINTR:
-                                        printf("EINTR\n");
-                                        break;
-                                case EINVAL:
-                                        printf("EINVAL\n");
-                                        break;
-                                default:
-                                        printf("Unable to handle this error.\n");
-                                        break;
-                                }
-                                printf(KRST);
-                        } else
-                                ; // no threads were finished
-
-                }
         }
         cleanup_main();
         return 0;
@@ -181,13 +104,15 @@ int main(int argc, char *argv[])
 void cleanup_main()
 {
         close(listenfd);
-        int i, j;
+        int i;
         for (i = 0; i < site->num_resources; i++) {
                 free(site->resources[i].resource_name);
                 free(site->resources[i].template_file);
                 free(site->resources[i].resource_file);
                 free(site->resources[i].intermediate_file);
                 free(site->resources[i].compilation_command);
+                free(site->resources[i].data_type);
+                free(site->resources[i].run_command);
         }
         free(site->resources);
 }
@@ -206,48 +131,68 @@ void handlesignals(int sig)
         return;
 }
 
-int handle_request(void *arg)
+int handle_request(int connfd, int listenfd)
 {
         //clock_t response_start_time = clock();
         const size_t LEN = 4096;
-        char *buffer = malloc(LEN * sizeof(char));;
+        size_t len = LEN;
+        size_t contents = 0;
+        char *buffer = malloc(LEN * sizeof(char));
+        char *bufferpos = buffer;
         char *item_requested = NULL;
         char *response_header = NULL;
         char command[512];
-        connection_t conn = *((connection_t*)arg);
         http_request_t req;
         FILE *f = NULL;
         FILE *poutput = NULL;
         int i;
         int status = 0;
-        size_t nread = 0;
+        ssize_t nread = 0;
         ducklet_resource_t *res = NULL;
         
         printf(KGRN "RESPONDING\n" KRST);
 
-        nread = read(conn.connfd, buffer, LEN - 1);
+        nread = read(connfd, buffer, LEN - 1);
+        if (nread == -1) {
+                fprintf(stderr, "failure reading http request from socket\n");
+                goto REQ_FAILURE;
+        }
+        contents += nread;
+
+        while ((nread = read(connfd, bufferpos, LEN)) > 0) {
+                contents += nread;
+                len = len * 2;
+                buffer = realloc(buffer, len);
+                /* we don't want requests larger than 16 MB */
+                if (contents > 0x100000)
+                        goto REQ_FAILURE;
+        }
+
+        printf("Read HTTP request %lu bytes long\n", contents);
+
+        buffer[contents] = '\0';
 
         req = get_http_request(buffer);
         
-        shutdown(conn.connfd, SHUT_RD); /* Need to put shutdown a bit later in
-                                           the code so I don't kill my buffer */
+        shutdown(connfd, SHUT_RD); /* Might need to put shutdown a bit later in
+                                      the code so I don't kill my buffer */
 
         item_requested = req.item + 1;
 
-        for (i = 0; i < conn.site->num_resources; i++) {
+        for (i = 0; i < site->num_resources; i++) {
                 if (strcmp(
                                 item_requested,
-                                conn.site->resources[i].resource_name
+                                site->resources[i].resource_name
                            ) == 0)
                         break;
         }
-        if (i >= conn.site->num_resources) {
+        if (i >= site->num_resources) {
                 printf(KRED "ERROR" KRST ": "
                        "could not find requested resource\n");
                 goto SHUTDOWN_HANDLER;
         } else {
-                res = &(conn.site->resources[i]);
-                int freshness = get_is_fresh(res, conn.site);
+                res = &(site->resources[i]);
+                int freshness = get_is_fresh(res, site);
                 if (freshness == 1) {
                 } else if (freshness == -1) {
                         printf(KRED "ERROR" KRST ": "
@@ -258,12 +203,12 @@ int handle_request(void *arg)
                 } else if (freshness == 0) {
                         sprintf(command,"cd %s && duckletc %s > %s/%s && %s"
                                         " && rm %s/%s",
-                                                conn.site->root_dir,
+                                                site->root_dir,
                                                 res->template_file,
-                                                conn.site->root_dir,
+                                                site->root_dir,
                                                 res->intermediate_file,
                                                 res->compilation_command,
-                                                conn.site->root_dir,
+                                                site->root_dir,
                                                 res->intermediate_file);
                         poutput = popen(command, "r");
                         if (!poutput) {
@@ -276,7 +221,7 @@ int handle_request(void *arg)
                 }
                 printf("POST message body: " KBLU "\"%s\"\n" KRST,
                                 req.body);
-                sprintf(command, "export ducklet_post=\"%s\" && cd %s && %s", req.body, conn.site->root_dir,
+                sprintf(command, "export ducklet_post=\"%s\" && cd %s && %s", req.body, site->root_dir,
                                                 res->run_command);
         }
         
@@ -288,12 +233,12 @@ TRY_AGAIN:
                 printf(KRED "POPEN failed\n");
 
         response_header = build_http_response(&req, STATUS_OK);
-        write(conn.connfd, response_header, strlen(response_header));
+        write(connfd, response_header, strlen(response_header));
 
         printf(KBLU);
         
         while ((nread = fread(buffer, sizeof(char), LEN, f)) != 0)
-                write(conn.connfd, buffer, nread);
+                write(connfd, buffer, nread);
 
         printf(KRST);
 
@@ -308,12 +253,15 @@ TRY_AGAIN:
                 printf("pclose returned %d\n", status);
         }
 
-SHUTDOWN_HANDLER:
-        shutdown(conn.connfd, SHUT_WR);
-        close(conn.connfd);
-        free(arg);
-
         printf(KGRN "Done responding. No errors.\n" KRST);
+
+SHUTDOWN_HANDLER:
+        free_http_request(&req);
+REQ_FAILURE:
+        free(buffer);
+        free(response_header);
+        shutdown(connfd, SHUT_WR);
+        close(connfd);
 
         /*printf("Response completed in %lf seconds.\n",
                 (double)(clock() - response_start_time) /

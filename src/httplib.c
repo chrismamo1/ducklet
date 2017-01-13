@@ -107,6 +107,18 @@ http_request_t get_http_request(char *req)
         return rval;
 }
 
+void free_http_request(http_request_t *req)
+{
+        /* [header] and [body] should both be references to a string allocated
+         * elsewhere in the program
+         */
+        free(req->user_agent);
+        free(req->item);
+        free(req->host);
+        free(req->content_type);
+        return;
+}
+
 char* build_http_response(http_request_t *req, http_status_e status)
 {
         char *rval = malloc(1024 * sizeof(char));

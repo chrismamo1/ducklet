@@ -43,7 +43,6 @@ typedef signed   short int uint16;
 #endif*/
 
 typedef struct _http_request_t http_request_t;
-typedef struct _connection_t connection_t;
 typedef struct _ducklet_resource_t ducklet_resource_t;
 typedef struct _ducklet_site_t ducklet_site_t;
 #endif
