@@ -133,7 +133,6 @@ void handlesignals(int sig)
 
 int handle_request(int connfd, int listenfd)
 {
-        //clock_t response_start_time = clock();
         const size_t LEN = 4096;
         size_t len = LEN;
         size_t contents = 0;
@@ -263,9 +262,5 @@ REQ_FAILURE:
         shutdown(connfd, SHUT_WR);
         close(connfd);
 
-        /*printf("Response completed in %lf seconds.\n",
-                (double)(clock() - response_start_time) /
-                (double)CLOCKS_PER_SEC);*/
-        //cleanup_main();
         return 0;
 }
