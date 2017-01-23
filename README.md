@@ -30,3 +30,19 @@ may then be used with the Ducklet Server.
   <body></body>
 </html>
 ```
+
+## Why use Ducklet?
+
+The Ducklet compiler is easily extended, so Ducklet applications may be written
+in essentially any programming language. This enables developers to write
+server-side code in the best language for the application without relying on the
+existence of extensive web programming toolkits for the language.
+
+## To-do
+
+ * Right now, the Ducklet server uses recipes specified in a site's
+ `ducklet.conf` to serve resources. This method is less than ideal because it
+ may execute arbitrary code and it requires quite a bit of overhead (dynamic
+ resources must be invoked using `popen`, which creates an entirely new process
+ and file descriptor which must be managed). I would prefer to use dynamic
+ linking where possible in order to minimize runtime overhead and complexity.
